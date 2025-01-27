@@ -15,18 +15,32 @@ export default function QueensGame() {
   const [message, setMessage] = useState("")
   const [checking, setChecking] = useState(false)
   const [initialized, setInitialized] = useState(false)
+  const [initError, setInitError] = useState<string | null>(null)
 
   useEffect(() => {
-    // Initialize Z3 when the component mounts
-    initZ3()
-      .then(() => {
-        setInitialized(true)
-        newGame()
-      })
-      .catch((error) => {
+    let mounted = true
+
+    const init = async () => {
+      try {
+        await initZ3()
+        if (mounted) {
+          setInitialized(true)
+          setInitError(null)
+          newGame()
+        }
+      } catch (error) {
         console.error("Failed to initialize Z3:", error)
-        setMessage("Failed to initialize the solver. Please refresh the page.")
-      })
+        if (mounted) {
+          setInitError("Failed to initialize the solver. Please refresh the page and try again.")
+        }
+      }
+    }
+
+    init()
+
+    return () => {
+      mounted = false
+    }
   }, [])
 
   function newGame() {
@@ -64,6 +78,20 @@ export default function QueensGame() {
     } finally {
       setChecking(false)
     }
+  }
+
+  if (initError) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen">
+        <div className="text-red-500 text-lg font-bold mb-4"> {initError}</div>
+        <button
+          onClick={() => window.location.reload()}
+          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+        >
+          Refresh Page
+        </button>
+      </div>
+    )
   }
 
   if (!initialized) {
@@ -133,9 +161,7 @@ export default function QueensGame() {
       {message && (
         <div 
           className={`text-lg font-bold p-2 rounded ${
-            message.includes("Error") || message.includes("Failed") 
-              ? "text-red-500 bg-red-50" 
-              : "text-green-500 bg-green-50"
+            message.includes("Error") ? "text-red-500 bg-red-50" : "text-green-500 bg-green-50"
           }`}
         >
           {message}

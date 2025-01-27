@@ -1,4 +1,4 @@
-import { z3, initZ3 } from "@/lib/z3-solver"
+import { getZ3, Z3_RESULTS } from "@/lib/z3-solver"
 
 type Cell = "empty" | "queen" | "x"
 type Board = Cell[][]
@@ -43,10 +43,11 @@ export function generatePuzzle(size: number): { board: Board; coloredRegions: Co
 }
 
 export async function checkSolution(board: Board, coloredRegions: ColoredRegions): Promise<boolean> {
-  await initZ3()
+  const z3 = getZ3()
   const size = board.length
-  const ctx = z3.Context()
-  const solver = z3.Solver(ctx)
+
+  const ctx = new z3.Context()
+  const solver = new z3.Solver(ctx)
 
   // Create boolean variables for each cell
   const cells: any[][] = Array(size)
@@ -54,25 +55,37 @@ export async function checkSolution(board: Board, coloredRegions: ColoredRegions
     .map((_, i) =>
       Array(size)
         .fill(null)
-        .map((_, j) => ctx.mkBoolConst(`cell_${i}_${j}`))
+        .map((_, j) => ctx.bool(`cell_${i}_${j}`))
     )
+
+  // Helper function to create exactly one constraint
+  function exactlyOne(vars: any[]) {
+    // At least one must be true
+    solver.add(z3.Or(...vars))
+
+    // No two can be true at the same time
+    for (let i = 0; i < vars.length; i++) {
+      for (let j = i + 1; j < vars.length; j++) {
+        solver.add(z3.Not(z3.And(vars[i], vars[j])))
+      }
+    }
+  }
 
   // 1. Each row must have exactly one queen
   for (let i = 0; i < size; i++) {
-    const row = cells[i].map(cell => [cell, 1])
-    solver.add(ctx.mkPBEq(row, 1))
+    exactlyOne(cells[i])
   }
 
   // 2. Each column must have exactly one queen
   for (let j = 0; j < size; j++) {
-    const col = cells.map(row => [row[j], 1])
-    solver.add(ctx.mkPBEq(col, 1))
+    const colVars = cells.map(row => row[j])
+    exactlyOne(colVars)
   }
 
   // 3. Each colored region must have exactly one queen
   for (const region of Object.values(coloredRegions)) {
-    const regionCells = region.map(([i, j]) => [cells[i][j], 1])
-    solver.add(ctx.mkPBEq(regionCells, 1))
+    const regionVars = region.map(([i, j]) => cells[i][j])
+    exactlyOne(regionVars)
   }
 
   // 4. No two queens can be adjacent (including diagonally)
@@ -86,12 +99,7 @@ export async function checkSolution(board: Board, coloredRegions: ColoredRegions
       for (const [di, dj] of directions) {
         const ni = i + di, nj = j + dj
         if (ni >= 0 && ni < size && nj >= 0 && nj < size) {
-          solver.add(
-            ctx.mkImplies(
-              cells[i][j],
-              ctx.mkNot(cells[ni][nj])
-            )
-          )
+          solver.add(z3.Not(z3.And(cells[i][j], cells[ni][nj])))
         }
       }
     }
@@ -103,12 +111,12 @@ export async function checkSolution(board: Board, coloredRegions: ColoredRegions
       if (board[i][j] === "queen") {
         solver.add(cells[i][j])
       } else if (board[i][j] === "x") {
-        solver.add(ctx.mkNot(cells[i][j]))
+        solver.add(z3.Not(cells[i][j]))
       }
     }
   }
 
   // Check if the current board state is solvable
   const result = await solver.check()
-  return result === z3.sat
+  return result === Z3_RESULTS.sat
 }

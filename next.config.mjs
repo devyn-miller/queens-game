@@ -22,10 +22,12 @@ const nextConfig = {
     parallelServerCompiles: true,
   },
   webpack: (config, { isServer }) => {
+    // Enable WebAssembly
     config.experiments = {
       ...config.experiments,
       asyncWebAssembly: true,
       layers: true,
+      topLevelAwait: true,
     }
 
     // Add WASM support
@@ -34,7 +36,18 @@ const nextConfig = {
       fs: false,
       path: false,
       crypto: false,
+      perf_hooks: false,
+      worker_threads: false,
     }
+
+    // Handle WebAssembly files
+    const wasmExtensionRegExp = /\.wasm$/
+    config.resolve.extensions.push('.wasm')
+
+    config.module.rules.push({
+      test: wasmExtensionRegExp,
+      type: 'webassembly/async',
+    })
 
     return config
   },
